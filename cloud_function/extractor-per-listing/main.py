@@ -36,9 +36,15 @@ READ_RETRY = gax_retry.Retry(
 storage_client = storage.Client()
 
 # -------------------- SIMPLE REGEX EXTRACTORS --------------------
-PRICE_RE      = re.compile(r"\$\s?([0-9,]+)")
-YEAR_RE       = re.compile(r"\b(19|20)\d{2}\b")
-MAKE_MODEL_RE = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][A-Za-z0-9]+)")
+PRICE_RE        = re.compile(r"\$\s?([0-9,]+)")
+YEAR_RE         = re.compile(r"\b(19|20)\d{2}\b")
+MAKE_MODEL_RE   = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][A-Za-z0-9]+)")
+
+# NEW FIELDS
+TRANSMISSION_RE = re.compile(r"\b(automatic|manual|cvt|auto)\b", re.I)
+FUEL_TYPE_RE    = re.compile(r"\b(gasoline|gas|diesel|electric|hybrid|plug-in hybrid)\b", re.I)
+DRIVE_TYPE_RE   = re.compile(r"\b(AWD|4WD|FWD|RWD|4x4|all.wheel|front.wheel|rear.wheel)\b", re.I)
+
 
 # -------------------- HELPERS --------------------
 def _list_run_ids(bucket: str, scrapes_prefix: str) -> list[str]:
@@ -149,7 +155,21 @@ def parse_listing(text: str) -> dict:
     if mi is not None:
         d["mileage"] = mi
 
+ # --- NEW FIELDS ---
+    t = TRANSMISSION_RE.search(text)
+    if t:
+        d["transmission"] = t.group(1).lower()
+
+    f = FUEL_TYPE_RE.search(text)
+    if f:
+        d["fuel_type"] = f.group(1).lower()
+
+    dr = DRIVE_TYPE_RE.search(text)
+    if dr:
+        d["drive_type"] = dr.group(1).upper()
+    
     return d
+```
 
 # -------------------- HTTP ENTRY --------------------
 def extract_http(request: Request):
