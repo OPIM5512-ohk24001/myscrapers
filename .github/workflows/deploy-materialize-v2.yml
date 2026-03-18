@@ -1,0 +1,85 @@
+name: Deploy materialize-v2 (CF Gen2 + Cloud Scheduler)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloud_function/materialize-v2/**"
+      - ".github/workflows/deploy-materialize-v2.yml"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID:    ${{ vars.PROJECT_ID }}
+  REGION:        ${{ vars.REGION }}
+  RUNTIME_SA:    ${{ vars.RUNTIME_SA }}
+  BUCKET_NAME:   ${{ vars.BUCKET_NAME }}
+  FUNCTION_NAME: materialize-v2
+  SOURCE_DIR:    cloud_function/materialize-v2
+  ENTRY_POINT:   materialize_http
+  SCHEDULE:      "0 * * * *"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ vars.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
+            --gen2 \
+            --region=${{ env.REGION }} \
+            --runtime=python312 \
+            --source=${{ env.SOURCE_DIR }} \
+            --entry-point=${{ env.ENTRY_POINT }} \
+            --trigger-http \
+            --allow-unauthenticated \
+            --service-account=${{ env.RUNTIME_SA }} \
+            --set-env-vars GCS_BUCKET=${{ env.BUCKET_NAME }},PROJECT_ID=${{ env.PROJECT_ID }} \
+            --timeout=540s \
+            --memory=512Mi \
+            --quiet
+
+      - name: Get Function URL
+        id: get_url
+        run: |
+          URL=$(gcloud functions describe ${{ env.FUNCTION_NAME }} \
+            --region=${{ env.REGION }} \
+            --gen2 \
+            --format='value(serviceConfig.uri)')
+          echo "FUNCTION_URL=$URL" >> $GITHUB_ENV
+
+      - name: Create or Update Cloud Scheduler Job
+        run: |
+          if gcloud scheduler jobs describe ${{ env.FUNCTION_NAME }}-job \
+              --location=${{ env.REGION }} --quiet 2>/dev/null; then
+            gcloud scheduler jobs update http ${{ env.FUNCTION_NAME }}-job \
+              --location=${{ env.REGION }} \
+              --schedule="${{ env.SCHEDULE }}" \
+              --uri="${{ env.FUNCTION_URL }}" \
+              --http-method=POST \
+              --oidc-service-account-email=${{ env.RUNTIME_SA }} \
+              --quiet
+          else
+            gcloud scheduler jobs create http ${{ env.FUNCTION_NAME }}-job \
+              --location=${{ env.REGION }} \
+              --schedule="${{ env.SCHEDULE }}" \
+              --uri="${{ env.FUNCTION_URL }}" \
+              --http-method=POST \
+              --oidc-service-account-email=${{ env.RUNTIME_SA }} \
+              --quiet
+          fi
