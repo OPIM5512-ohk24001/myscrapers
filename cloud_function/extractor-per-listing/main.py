@@ -169,7 +169,6 @@ def parse_listing(text: str) -> dict:
         d["drive_type"] = dr.group(1).upper()
     
     return d
-```
 
 # -------------------- HTTP ENTRY --------------------
 def extract_http(request: Request):
