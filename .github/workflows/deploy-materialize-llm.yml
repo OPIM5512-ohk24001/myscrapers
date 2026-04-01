@@ -1,0 +1,108 @@
+name: Deploy materialize-llm (CF Gen2 + Cloud Scheduler)
+run-name: "materialize-llm deploy by ${{ github.actor }} • ${{ github.ref_name }}"
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'cloud_function/materialize-llm/**'
+      - '.github/workflows/deploy-materialize-llm.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  REGION: ${{ vars.REGION }}
+  FUNCTION_NAME: materialize-llm
+  FUNCTION_DIR: cloud_function/materialize-llm
+  ENTRY_POINT: materialize_llm
+  RUNTIME: python312
+  BUCKET_NAME: ${{ vars.BUCKET_NAME }}
+  RUNTIME_SA: ${{ vars.RUNTIME_SA }}
+  DEPLOYER_SA: ${{ vars.DEPLOYER_SA }}
+  WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+  SCHEDULE_BODY: '{"overwrite":true,"run_id":"20260401100008"}'
+  CRON_EXPR: "15 * * * *"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Cloud Function
+        id: cfurl
+        run: |
+          set -euo pipefail
+          URL=$(gcloud functions deploy "$FUNCTION_NAME" \
+            --gen2 \
+            --runtime="$RUNTIME" \
+            --region="$REGION" \
+            --source="$FUNCTION_DIR" \
+            --entry-point="$ENTRY_POINT" \
+            --trigger-http \
+            --allow-unauthenticated \
+            --timeout=300s \
+            --set-env-vars="PROJECT_ID=${PROJECT_ID},BUCKET_NAME=${BUCKET_NAME}" \
+            --service-account="$RUNTIME_SA" \
+            --format="value(serviceConfig.uri)")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Grant SA invoker role
+        run: |
+          gcloud functions add-invoker-policy-binding "$FUNCTION_NAME" \
+            --region="$REGION" \
+            --member="serviceAccount:${RUNTIME_SA}"
+
+      - name: Grant ServiceAccountUser to deployer
+        run: |
+          gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
+            --member="serviceAccount:${DEPLOYER_SA}" \
+            --role="roles/iam.serviceAccountUser" || {
+            echo "::error::Permission denied adding ServiceAccountUser for ${DEPLOYER_SA} on ${RUNTIME_SA}."
+            exit 1
+          }
+
+      - name: Create/Update Cloud Scheduler job
+        shell: bash
+        run: |
+          set -euo pipefail
+          JOB_NAME="${FUNCTION_NAME}-hourly"
+          URL="${{ steps.cfurl.outputs.url }}"
+          [[ -z "${URL}" ]] && { echo "Function URL empty"; exit 1; }
+
+          if gcloud scheduler jobs describe "$JOB_NAME" --location="${REGION}" >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$JOB_NAME" \
+              --location="${REGION}" \
+              --schedule="${CRON_EXPR}" \
+              --time-zone="America/New_York" \
+              --uri="${URL}" \
+              --http-method=POST \
+              --message-body='${{ env.SCHEDULE_BODY }}' \
+              --oidc-service-account-email="${RUNTIME_SA}" \
+              --oidc-token-audience="${URL}"
+          else
+            gcloud scheduler jobs create http "$JOB_NAME" \
+              --location="${REGION}" \
+              --schedule="${CRON_EXPR}" \
+              --time-zone="America/New_York" \
+              --uri="${URL}" \
+              --http-method=POST \
+              --message-body='${{ env.SCHEDULE_BODY }}' \
+              --oidc-service-account-email="${RUNTIME_SA}" \
+              --oidc-token-audience="${URL}"
+          fi
