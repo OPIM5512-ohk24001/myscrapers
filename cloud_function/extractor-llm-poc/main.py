@@ -170,7 +170,7 @@ def _vertex_extract_fields(raw_text: str) -> dict:
             "model": {"type": "string", "nullable": True},
             "mileage": {"type": "integer", "nullable": True},
         },
-        "required": ["price", "year", "make", "model", "mileage"]
+        schema = {         "type": "object",         "properties": {             "price":        {"type": "integer", "nullable": True},             "year":         {"type": "integer", "nullable": True},             "make":         {"type": "string",  "nullable": True},             "model":        {"type": "string",  "nullable": True},             "mileage":      {"type": "integer", "nullable": True},             # --- NEW A07 fields ---             "body_type":    {"type": "string",  "nullable": True},             "color":        {"type": "string",  "nullable": True},             "title_status": {"type": "string",  "nullable": True},             "condition":    {"type": "string",  "nullable": True},             "location":     {"type": "string",  "nullable": True},         },         "required": [             "price", "year", "make", "model", "mileage",             "body_type", "color", "title_status", "condition", "location"         ]     }
     }
 
     # System instruction (will be prepended to the prompt)
@@ -318,6 +318,11 @@ def llm_extract_http(request: Request):
                 "make": parsed.get("make"),
                 "model": parsed.get("model"),
                 "mileage": parsed.get("mileage"),
+                 "body_type":    parsed.get("body_type"),
+                "color":        parsed.get("color"),
+                "title_status": parsed.get("title_status"),
+                "condition":    parsed.get("condition"),
+                "location":     parsed.get("location"),
                 "llm_provider": "vertex",
                 "llm_model": LLM_MODEL,
                 "llm_ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
