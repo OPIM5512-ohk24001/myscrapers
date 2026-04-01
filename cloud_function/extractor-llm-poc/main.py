@@ -164,13 +164,21 @@ def _vertex_extract_fields(raw_text: str) -> dict:
     schema = {
         "type": "object",
         "properties": {
-            "price": {"type": "integer", "nullable": True},
-            "year": {"type": "integer", "nullable": True},
-            "make": {"type": "string", "nullable": True},
-            "model": {"type": "string", "nullable": True},
-            "mileage": {"type": "integer", "nullable": True},
+            "price":        {"type": "integer", "nullable": True},
+            "year":         {"type": "integer", "nullable": True},
+            "make":         {"type": "string",  "nullable": True},
+            "model":        {"type": "string",  "nullable": True},
+            "mileage":      {"type": "integer", "nullable": True},
+            "body_type":    {"type": "string",  "nullable": True},
+            "color":        {"type": "string",  "nullable": True},
+            "title_status": {"type": "string",  "nullable": True},
+            "condition":    {"type": "string",  "nullable": True},
+            "location":     {"type": "string",  "nullable": True},
         },
-        schema = {         "type": "object",         "properties": {             "price":        {"type": "integer", "nullable": True},             "year":         {"type": "integer", "nullable": True},             "make":         {"type": "string",  "nullable": True},             "model":        {"type": "string",  "nullable": True},             "mileage":      {"type": "integer", "nullable": True},             # --- NEW A07 fields ---             "body_type":    {"type": "string",  "nullable": True},             "color":        {"type": "string",  "nullable": True},             "title_status": {"type": "string",  "nullable": True},             "condition":    {"type": "string",  "nullable": True},             "location":     {"type": "string",  "nullable": True},         },         "required": [             "price", "year", "make", "model", "mileage",             "body_type", "color", "title_status", "condition", "location"         ]     }
+        "required": [
+            "price", "year", "make", "model", "mileage",
+            "body_type", "color", "title_status", "condition", "location"
+        ]
     }
 
     # System instruction (will be prepended to the prompt)
